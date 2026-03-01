@@ -1,7 +1,15 @@
 data/
 runs/
+venv/
+env/
+ENV/
+.vscode/
+.idea/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 *.log
+*.db
+*.h5
+*.pkl

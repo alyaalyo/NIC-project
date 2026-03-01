@@ -3,3 +3,4 @@ pandas
 scikit-learn
 torch
 pyyaml
+tensorflow>=2.10.0
