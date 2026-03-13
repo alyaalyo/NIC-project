@@ -1,6 +1,7 @@
 import random
 import tensorflow as tf
 from tensorflow.keras import layers, models
+import numpy as np
 
 class LayerGene:
     """
@@ -128,6 +129,84 @@ def initialize_population(pop_size: int, input_dim: int, **kwargs) -> list:
         population.append((individual, model))
     return population
 
+def mutate_individual(individual: ArchitectureGene, mutation_rate: float = 0.3, 
+                      units_choices=[16, 32, 64, 128, 256],
+                      activation_choices=['relu', 'tanh', 'sigmoid'],
+                      dropout_range=(0.0, 0.5)) -> ArchitectureGene:
+    """
+    Mutates an individual by randomly changing layer parameters.
+    Each layer has a probability mutation_rate to be mutated.
+    """
+    mutated_layers = []
+    for layer in individual.layers:
+        if random.random() < mutation_rate:
+            # Randomly choose which parameter to mutate
+            mutation_type = random.choice(['units', 'activation', 'dropout'])
+            
+            units = layer.units
+            activation = layer.activation
+            dropout_rate = layer.dropout_rate
+            
+            if mutation_type == 'units' or random.random() < 0.33:
+                units = random.choice(units_choices)
+            if mutation_type == 'activation' or random.random() < 0.33:
+                activation = random.choice(activation_choices)
+            if mutation_type == 'dropout' or random.random() < 0.33:
+                dropout_rate = round(random.uniform(*dropout_range), 2)
+                
+            mutated_layers.append(LayerGene(units, activation, dropout_rate))
+        else:
+            mutated_layers.append(layer)
+    
+    return ArchitectureGene(mutated_layers)
+
+def roulette_selection(population_with_fitness, num_parents: int):
+    """
+    Selects parents using roulette wheel selection based on fitness scores.
+    population_with_fitness: list of tuples [(individual, model, fitness), ...]
+    Returns list of selected parents (individuals only).
+    """
+    # Extract fitness values
+    fitness_values = [fitness for _, _, fitness in population_with_fitness]
+    
+    # Handle negative fitness values by shifting to positive
+    min_fitness = min(fitness_values)
+    if min_fitness < 0:
+        fitness_values = [f - min_fitness + 1e-10 for f in fitness_values]
+    
+    # Calculate total fitness and selection probabilities
+    total_fitness = sum(fitness_values)
+    selection_probs = [f / total_fitness for f in fitness_values]
+    
+    # Select parents
+    selected_indices = np.random.choice(
+        len(population_with_fitness), 
+        size=num_parents, 
+        p=selection_probs, 
+        replace=False
+    )
+    
+    return [population_with_fitness[i][0] for i in selected_indices]
+
+
+def single_point_crossover(parent1: ArchitectureGene, parent2: ArchitectureGene) -> tuple:
+    """
+    Performs single-point crossover between two parent architectures.
+    Returns two child individuals.
+    """
+    # Find crossover point (can't be at the ends)
+    min_len = min(len(parent1), len(parent2))
+    if min_len < 2:
+        # If too short, just return copies of parents
+        return parent1, parent2
+    
+    crossover_point = random.randint(1, min_len - 1)
+    
+    # Create children by combining layers from both parents
+    child1_layers = parent1.layers[:crossover_point] + parent2.layers[crossover_point:]
+    child2_layers = parent2.layers[:crossover_point] + parent1.layers[crossover_point:]
+    
+    return ArchitectureGene(child1_layers), ArchitectureGene(child2_layers)
 
 # Example usage
 if __name__ == "__main__":
