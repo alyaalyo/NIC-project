@@ -6,6 +6,7 @@ import os
 import sys
 from typing import Dict, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -68,6 +69,34 @@ def _evaluate_individual(
         json.dump({"val_roc_auc": auc}, f, indent=2)
 
     return auc
+
+
+def _gene_signature(gene) -> str:
+    layers = [
+        (layer.units, layer.activation, layer.dropout_rate) for layer in gene.layers
+    ]
+    return json.dumps(layers, separators=(",", ":"))
+
+
+def _plot_evolution(history: pd.DataFrame, out_path: str) -> None:
+    fig, axes = plt.subplots(2, 1, figsize=(9, 8), sharex=True)
+
+    axes[0].plot(history["generation"], history["avg_fitness"], label="Avg fitness")
+    axes[0].plot(history["generation"], history["best_fitness"], label="Best fitness")
+    axes[0].set_ylabel("Fitness")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+
+    axes[1].plot(history["generation"], history["diversity"], label="Diversity")
+    axes[1].set_xlabel("Generation")
+    axes[1].set_ylabel("Diversity (unique ratio)")
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+
+    fig.suptitle("GA Evolution")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=160)
+    plt.close(fig)
 
 
 def main() -> None:
@@ -138,6 +167,7 @@ def main() -> None:
     ]
 
     history = []
+    population_log = []
     best = {"fitness": float("-inf"), "gene": None}
 
     for gen in range(generations):
@@ -157,6 +187,15 @@ def main() -> None:
             )
             evaluated.append((gene, fitness))
             logger.info(f"  Individual {idx+1}/{pop_size} fitness={fitness:.4f}")
+            population_log.append(
+                {
+                    "generation": gen + 1,
+                    "individual": idx + 1,
+                    "fitness": float(fitness),
+                    "gene_signature": _gene_signature(gene),
+                    "num_layers": len(gene.layers),
+                }
+            )
 
         evaluated.sort(key=lambda x: x[1], reverse=True)
         gen_best_gene, gen_best_fitness = evaluated[0]
@@ -165,11 +204,16 @@ def main() -> None:
             best = {"fitness": gen_best_fitness, "gene": gen_best_gene.to_dict()}
 
         avg_fitness = float(np.mean([f for _, f in evaluated]))
+        unique_genes = {
+            _gene_signature(gene) for gene, _ in evaluated
+        }
+        diversity = float(len(unique_genes)) / float(len(evaluated))
         history.append(
             {
                 "generation": gen + 1,
                 "best_fitness": float(gen_best_fitness),
                 "avg_fitness": avg_fitness,
+                "diversity": diversity,
             }
         )
 
@@ -211,10 +255,18 @@ def main() -> None:
 
         population = next_population
 
-    with open(os.path.join(run_dir, "history.json"), "w", encoding="utf-8") as f:
+    history_path = os.path.join(run_dir, "history.json")
+    with open(history_path, "w", encoding="utf-8") as f:
         json.dump({"history": history}, f, indent=2)
     with open(os.path.join(run_dir, "best.json"), "w", encoding="utf-8") as f:
         json.dump(best, f, indent=2)
+
+    history_df = pd.DataFrame(history)
+    history_df.to_csv(os.path.join(run_dir, "history.csv"), index=False)
+    pd.DataFrame(population_log).to_csv(
+        os.path.join(run_dir, "population.csv"), index=False
+    )
+    _plot_evolution(history_df, os.path.join(run_dir, "evolution.png"))
 
     print("Best individual:", best)
 
